@@ -1,7 +1,7 @@
 import itertools
 from collections import defaultdict
 from functools import reduce
-from typing import Any, Iterable, cast
+from typing import Any, Generic, Iterable, Optional, TypeVar, cast
 
 import numpy as np
 from networkx import MultiDiGraph
@@ -11,14 +11,21 @@ from pyformlang.finite_automaton import (
     FiniteAutomaton,
     Symbol,
 )
-from scipy.sparse import csc_matrix, kron
+from scipy.sparse import csc_matrix, dok_matrix, kron, lil_matrix, csr_matrix
 
 from project.finite_automaton import graph_to_nfa, regex_to_dfa
 
 
-class AdjacencyMatrixFA:
-    def __init__(self, fa: FiniteAutomaton):
+_M_type = csr_matrix | csc_matrix | dok_matrix | lil_matrix
+MatrixType = TypeVar("MatrixType", bound=_M_type)
+
+
+class AdjacencyMatrixFA(Generic[MatrixType]):
+    def __init__(
+        self, fa: FiniteAutomaton, matrix_type: Optional[type[MatrixType]] = None
+    ):
         graph = fa.to_networkx()
+        self.matrix_type = matrix_type or csr_matrix
         self.states_count = len(fa.states)
         self.states = {state: i for i, state in enumerate(fa.states)}
         self.indices_states = {i: state for state, i in self.states.items()}
@@ -38,8 +45,8 @@ class AdjacencyMatrixFA:
         for idx1, idx2, symbol in transit:
             transitions[symbol][idx1, idx2] = True
 
-        self.matrices: dict[Symbol, csc_matrix] = {
-            sym: csc_matrix(matrix) for (sym, matrix) in transitions.items()
+        self.matrices = {
+            sym: self.matrix_type(matrix) for (sym, matrix) in transitions.items()
         }
 
     def accepts(self, word: Iterable[Symbol]) -> bool:
@@ -62,8 +69,8 @@ class AdjacencyMatrixFA:
 
         return False
 
-    def transitive_closure(self) -> csc_matrix:
-        res = csc_matrix((self.states_count, self.states_count), dtype=bool)
+    def transitive_closure(self) -> MatrixType | Any:
+        res = self.matrix_type((self.states_count, self.states_count), dtype=bool)
         res = reduce(lambda x, y: x + y, self.matrices.values(), res)
         res.setdiag(True)
 
@@ -85,9 +92,13 @@ class AdjacencyMatrixFA:
 
 
 def intersect_automata(
-    amf1: AdjacencyMatrixFA, amf2: AdjacencyMatrixFA
+    amf1: AdjacencyMatrixFA,
+    amf2: AdjacencyMatrixFA,
+    matrix_type: Optional[type[MatrixType]] = None,
 ) -> AdjacencyMatrixFA:
-    new_amf = AdjacencyMatrixFA(DeterministicFiniteAutomaton())
+    new_amf: AdjacencyMatrixFA = AdjacencyMatrixFA(
+        DeterministicFiniteAutomaton(), matrix_type
+    )
     new_amf.states_count = amf1.states_count * amf2.states_count
 
     for state1, state2 in itertools.product(amf1.states.keys(), amf2.states.keys()):
@@ -109,10 +120,18 @@ def intersect_automata(
 
 
 def tensor_based_rpq(
-    regex: str, graph: MultiDiGraph, start_nodes: set[int], final_nodes: set[int]
+    regex: str,
+    graph: MultiDiGraph,
+    start_nodes: Optional[set[int]] = None,
+    final_nodes: Optional[set[int]] = None,
+    matrix_type: Optional[type[MatrixType]] = None,
 ) -> set[tuple[int, int]]:
-    regex_amf = AdjacencyMatrixFA(regex_to_dfa(regex))
-    graph_amf = AdjacencyMatrixFA(graph_to_nfa(graph, start_nodes, final_nodes))
+    start_nodes = start_nodes or set(graph.nodes)
+    final_nodes = final_nodes or set(graph.nodes)
+    regex_amf: AdjacencyMatrixFA = AdjacencyMatrixFA(regex_to_dfa(regex), matrix_type)
+    graph_amf: AdjacencyMatrixFA = AdjacencyMatrixFA(
+        graph_to_nfa(graph, start_nodes, final_nodes), matrix_type
+    )
     inter = intersect_automata(regex_amf, graph_amf)
     closure = inter.transitive_closure()
 

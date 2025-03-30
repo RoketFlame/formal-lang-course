@@ -43,10 +43,10 @@ def test_graph_to_nfa(
 
     assert start_states == get_states_int(nfa.start_states), "Start states don't match"
     assert final_states == get_states_int(nfa.final_states), "Final states don't match"
-    assert set(map(int, graph.nodes)) == get_states_int(
-        nfa.states
-    ), "All states don't match"
+    assert set(map(int, graph.nodes)) == get_states_int(nfa.states), (
+        "All states don't match"
+    )
 
-    assert (
-        GraphData.get_graph_data_by_name(graph_name).labels == nfa.symbols
-    ), "Labels don't match symbols"
+    assert GraphData.get_graph_data_by_name(graph_name).labels == nfa.symbols, (
+        "Labels don't match symbols"
+    )

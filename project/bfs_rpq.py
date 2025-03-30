@@ -1,19 +1,31 @@
 import functools
 import operator
 from itertools import product
+from typing import Optional, TypeVar, Union, cast
 
 from networkx import MultiDiGraph
-from scipy.sparse import csr_matrix, vstack
+from scipy.sparse import csr_matrix, vstack, csc_matrix, lil_matrix, dok_matrix
 
 from project.adjacency_matrix import AdjacencyMatrixFA
 from project.finite_automaton import graph_to_nfa, regex_to_dfa
 
+MatrixType = TypeVar(
+    "MatrixType", bound=Union[csr_matrix, csc_matrix, dok_matrix, lil_matrix]
+)
+
 
 def ms_bfs_based_rpq(
-    regex: str, graph: MultiDiGraph, start_nodes: set[int], final_nodes: set[int]
+    regex: str,
+    graph: MultiDiGraph,
+    start_nodes: Optional[set[int]] = None,
+    final_nodes: Optional[set[int]] = None,
+    matrix_type: Optional[type[MatrixType]] = None,
 ) -> set[tuple[int, int]]:
-    dfa = AdjacencyMatrixFA(regex_to_dfa(regex))
-    nfa = AdjacencyMatrixFA(graph_to_nfa(graph, start_nodes, final_nodes))
+    matrix_type = cast(type[MatrixType], matrix_type or csr_matrix)
+    start_nodes = start_nodes or set(graph.nodes)
+    final_nodes = final_nodes or set(graph.nodes)
+    dfa = AdjacencyMatrixFA(regex_to_dfa(regex), matrix_type)
+    nfa = AdjacencyMatrixFA(graph_to_nfa(graph, start_nodes, final_nodes), matrix_type)
 
     symbols = dfa.matrices.keys() & nfa.matrices.keys()
     permutation_matrices = {s: dfa.matrices[s].transpose() for s in symbols}
@@ -24,7 +36,7 @@ def ms_bfs_based_rpq(
     m = nfa.states_count
 
     def init_matrix(dfa_idx, nfa_idx):
-        matrix = csr_matrix((k, m), dtype=bool)
+        matrix = matrix_type((k, m), dtype=bool)
         matrix[dfa_idx, nfa_idx] = True
         return matrix
 
